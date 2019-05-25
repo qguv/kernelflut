@@ -26,3 +26,7 @@ evdi/library/libevdi.so:
 clean:
 	rm -f kernelflut *.o
 	make -C evdi/library clean
+
+.PHONY: update_evdi
+update_evdi:
+	git subtree pull --prefix evdi https://github.com/DisplayLink/evdi master --squash
