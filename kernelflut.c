@@ -1,17 +1,31 @@
-#include <stdio.h>
+#include <dirent.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+
 #include "evdi_lib.h"
 #include "kernelflut.h"
 
-#define NUM_POSSIBLE_CARDS 64
+#define BYTES_PER_PIXEL 4
 
-extern const char _binary_thinkpad_edid_start[];
-extern const size_t _binary_thinkpad_edid_size;
+extern const unsigned char _binary_thinkpad_edid_start[];
+static bool volatile doomed = false;
+
+void interrupt(int _)
+{
+	(void) _;
+	doomed = true;
+}
 
 /*
- * FIXME: NOT IMPLEMENTED
- * asks pixelflut for its size
- * returns 1 on success, 0 on failure
+ * get_pixelflut_size asks pixelflut for its height and width; returns 1 on
+ * success, 0 on failure
+ *
+ * FIXME: NOT ACTUALLY IMPLEMENTED
  */
 int get_pixelflut_size(struct pixelflut_size *ps)
 {
@@ -20,47 +34,79 @@ int get_pixelflut_size(struct pixelflut_size *ps)
 	return 1;
 }
 
+/*
+ * get_first_device looks through registered cardX entries in /dev/dri to try
+ * to find one managed by EVDI; returns -1 if it can't find one
+ */
+int get_first_device()
+{
+	DIR *dp;
+	dp = opendir("/dev/dri");
+	if (dp == NULL) {
+		perror("couldn't get evdi cards");
+		return -1;
+	}
+
+	int card;
+	struct dirent *ep;
+	while ((ep = readdir(dp)))
+		if (sscanf(ep->d_name, "card%d", &card) == 1 && evdi_check_device(card) == AVAILABLE)
+			return card;
+
+	return -1;
+}
+
 int main(void)
 {
-	int ok = evdi_add_device();
-	if (!ok) {
-		perror("couldn't create new evdi device");
-		return 1;
+	signal(SIGINT, interrupt);
+
+	int card = get_first_device();
+	if (card < 0) {
+		if (!evdi_add_device()) {
+			perror("couldn't create new evdi device");
+			return 1;
+		}
+		card = get_first_device();
+		if (card < 0) {
+			printf("couldn't find newly created evdi device\n");
+			return 2;
+		}
 	}
+	printf("card is %d\n", card);
 
-	int cardid;
-	evdi_device_status devstatus;
-	evdi_handle devhandle;
-	int found = 0;
-	for (cardid = 0; cardid < NUM_POSSIBLE_CARDS; cardid++) {
-
-		devstatus = evdi_check_device(cardid);
-		if (devstatus != AVAILABLE)
-			continue;
-
-		evdi_handle devhandle = evdi_open(cardid);
-		if (devhandle == EVDI_INVALID_HANDLE)
-			continue;
-
-		found = 1;
-		break;
-	}
-
-	if (!found) {
-		printf("couldn't find an available evdi device, even after making one\n");
-		return 2;
-	}
-
-	struct pixelflut_size ps;
-	ok = get_pixelflut_size(&ps);
-	if (!ok) {
-		printf("couldn't get size of pixelflut screen\n");
+	evdi_handle ehandle = evdi_open(card);
+	if (ehandle == EVDI_INVALID_HANDLE) {
+		perror("couldn't open evdi device");
 		return 3;
 	}
 
-	const uint32_t sku_area_limit = ps.w * ps.h;
-	evdi_connect(devhandle, _binary_thinkpad_edid_start, _binary_thinkpad_edid_size, sku_area_limit);
+	struct pixelflut_size ps;
+	if (!get_pixelflut_size(&ps)) {
+		printf("couldn't get size of pixelflut screen\n");
+		return 4;
+	}
 
-	//struct evdi_buffer ebuf;
-	//evdi_register_buffer(...);
+	const uint32_t sku_area_limit = ps.w * ps.h;
+	evdi_connect(ehandle, _binary_thinkpad_edid_start, 128, sku_area_limit);
+
+	void *framebuffer = calloc(ps.w * ps.h * BYTES_PER_PIXEL, 1);
+	if (framebuffer == NULL) {
+		perror("couldn't allocate framebuffer");
+		return 5;
+	}
+
+	struct evdi_buffer ebuf;
+	memset(&ebuf, 0, sizeof(ebuf));
+	ebuf.buffer = framebuffer;
+	ebuf.width = ps.w;
+	ebuf.height = ps.h;
+	ebuf.stride = ps.w * 4; /* RGB32, so four bytes per pixel */
+	evdi_register_buffer(ehandle, ebuf);
+
+	while (!doomed);
+
+	evdi_unregister_buffer(ehandle, 0);
+	evdi_disconnect(ehandle);
+	evdi_close(ehandle);
+	return 0;
 }
