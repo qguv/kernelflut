@@ -15,6 +15,8 @@
 #define BYTES_PER_PIXEL 4
 #define RECTS 16
 #define PF_CONNS 16
+#define ROUNDS 5
+#define STAGGER 2
 
 extern const unsigned char _binary_thinkpad_edid_start[];
 static bool volatile doomed = false;
@@ -161,27 +163,33 @@ int main(int argc, char *argv[])
 		if (!dirty_rects)
 			continue;
 
-		printf("%d ", dirty_rects); fflush(stdout); // DEBUG
+		printf("%d", dirty_rects); fflush(stdout); // DEBUG
 
 		int conn = 0;
-		for (int i = 0; i < dirty_rects && !doomed; i++) {
-			for (int y = rects[i].y1; y < rects[i].y2; y++) {
-				for (int x = rects[i].x1; x < rects[i].x2; x++) {
+		for (int i = 0; !doomed && i < dirty_rects; i++) {
+			for (int round = 0; round < ROUNDS; round++) {
+				for (int y = rects[i].y1; y < rects[i].y2; y++) {
 
-					int j = (y * ebuf.width + x) * BYTES_PER_PIXEL;
+					int row_round = (round + y) % ROUNDS;
+					int row_bias = (row_round * STAGGER) % ROUNDS;
 
-					char b = framebuffer[j];
-					char g = framebuffer[j+1];
-					char r = framebuffer[j+2];
+					for (int x = rects[i].x1 + row_bias; x < rects[i].x2; x += ROUNDS) {
+						int j = (y * ebuf.width + x) * BYTES_PER_PIXEL;
 
-					if (!pf_set(pf_conns[conn++], x, y, r, g, b)) {
-						ret = ERR_PF_SEND;
-						goto cleanup_evdi_register_buffer;
+						char b = framebuffer[j];
+						char g = framebuffer[j+1];
+						char r = framebuffer[j+2];
+
+						if (!pf_set(pf_conns[conn++], x, y, r, g, b)) {
+							ret = ERR_PF_SEND;
+							goto cleanup_evdi_register_buffer;
+						}
+						conn %= PF_CONNS;
 					}
-					conn %= PF_CONNS;
 				}
 			}
 		}
+		printf(". "); fflush(stdout); // DEBUG
 	}
 
 cleanup_evdi_register_buffer:
