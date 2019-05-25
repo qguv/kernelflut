@@ -3,8 +3,8 @@
 #
 
 OBJ = evdi/library/libevdi.so thinkpad_edid.o pixelflut.o kernelflut.o
-DEPS = kernelflut.h
-CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Werror -Wpedantic -Wextra -std=gnu99 $(CFLAGS)
+DEPS = pixelflut.h kernelflut.h
+CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Werror -Wpedantic -Wextra -Wno-unused-label -std=gnu99 $(CFLAGS)
 
 .PHONY: build
 build: kernelflut

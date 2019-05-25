@@ -1,3 +1,5 @@
+#pragma once
+
 struct pf_size {
 	int w;
 	int h;

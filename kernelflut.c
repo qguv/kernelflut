@@ -14,6 +14,7 @@
 
 #define BYTES_PER_PIXEL 4
 #define RECTS 16
+#define PF_CONNS 16
 
 extern const unsigned char _binary_thinkpad_edid_start[];
 static bool volatile doomed = false;
@@ -48,11 +49,29 @@ int get_first_device()
 
 int main(int argc, char *argv[])
 {
-	(void) argc;
-	(void) argv;
-
 	int ret = 0;
+
 	signal(SIGINT, interrupt);
+
+	if (argc == 2 && argv[1][0] == '-') {
+		printf("Usage:\n  sudo %s [host [port]]\n", argv[0]);
+		ret = ERR_USAGE;
+		goto cleanup;
+	}
+
+	char *hostname = "localhost";
+	int port = 1337;
+
+	if (argc >= 2)
+		hostname = argv[1];
+
+	if (argc >= 3) {
+		port = atoi(argv[2]);
+		if (port <= 0) {
+			ret = ERR_BADPORT;
+			goto cleanup;
+		}
+	}
 
 	int card = get_first_device();
 	if (card < 0) {
@@ -78,26 +97,33 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	// FIXME dynamic
-	int pf_fd = pf_connect("127.0.0.1", 1337);
-	if (pf_fd < 0) {
-		printf("couldn't connect to pixelflut!");
-		ret = ERR_PF_CONNECT;
-		goto cleanup_evdi_open;
+	printf("connecting to pixelflut");
+	fflush(stdout);
+
+	int pf_conns[PF_CONNS];
+	memset(pf_conns, 0, sizeof(pf_conns));
+	for (int i = 0; !doomed && i < PF_CONNS; i++) {
+		printf("-");
+		fflush(stdout);
+
+		pf_conns[i] = pf_connect(hostname, port);
+		if (pf_conns[i] < 0) {
+			ret = ERR_PF_CONNECT;
+			goto cleanup_pf_connect;
+		}
+
+		printf("\b.");
+		fflush(stdout);
 	}
-	printf("connected to pixelflut\n");
+	if (doomed)
+		goto cleanup_pf_connect;
+	printf(" ok\n");
 
 	struct pf_size ps;
-	ps.w = 800; // DEBUG
-	ps.h = 600; // DEBUG
 	/* DEBUG
-	if (!pf_size(pf_fd, &ps)) {
-		printf("couldn't get size of pixelflut screen\n");
-		ret = ERR_PF_SIZE;
-		goto cleanup_pf_connect;
-	}
-	*/
-	printf("DEBUG pixelflut screen is %d pixels wide by %d tall\n", ps.w, ps.h);
+	ps.w = 1366;
+	ps.h = 768;
+	DEBUG */ps.w = 800; ps.h = 600;
 
 	const uint32_t sku_area_limit = ps.w * ps.h;
 	evdi_connect(ehandle, _binary_thinkpad_edid_start, 128, sku_area_limit);
@@ -135,9 +161,9 @@ int main(int argc, char *argv[])
 		if (!dirty_rects)
 			continue;
 
-		printf("DEBUG: %d rects to update! ", dirty_rects);
-		fflush(stdout); // DEBUG
+		printf("%d ", dirty_rects); fflush(stdout); // DEBUG
 
+		int conn = 0;
 		for (int i = 0; i < dirty_rects && !doomed; i++) {
 			for (int y = rects[i].y1; y < rects[i].y2; y++) {
 				for (int x = rects[i].x1; x < rects[i].x2; x++) {
@@ -148,10 +174,11 @@ int main(int argc, char *argv[])
 					char g = framebuffer[j+1];
 					char r = framebuffer[j+2];
 
-					if (!pf_set(pf_fd, x, y, r, g, b)) {
+					if (!pf_set(pf_conns[conn++], x, y, r, g, b)) {
 						ret = ERR_PF_SEND;
 						goto cleanup_evdi_register_buffer;
 					}
+					conn %= PF_CONNS;
 				}
 			}
 		}
@@ -164,8 +191,10 @@ cleanup_alloc_rects:
 	free(framebuffer);
 cleanup_evdi_connect:
 	evdi_disconnect(ehandle);
-//cleanup_pf_connect: // DEBUG
-	close(pf_fd);
+cleanup_pf_connect:
+	for (int i = 0; i < PF_CONNS; i++)
+		if (pf_conns[i] > 0)
+			close(pf_conns[i]);
 cleanup_evdi_open:
 	evdi_close(ehandle);
 cleanup:

@@ -1,4 +1,8 @@
-#define ERR_ALLOC 2
+#pragma once
+
+#define ERR_USAGE 2
+#define ERR_BADPORT 3
+#define ERR_ALLOC 4
 
 #define ERR_EVDI_ADD 10
 #define ERR_EVDI_FIND 11

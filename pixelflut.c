@@ -27,11 +27,10 @@ int pf_connect(char *host, int port)
    struct sockaddr_in serv_addr;
    memset(&serv_addr, 0, sizeof(serv_addr));
    serv_addr.sin_family = AF_INET;
-
-   memcpy((char *) &serv_addr.sin_addr.s_addr, (char *) server->h_addr, server->h_length);
    serv_addr.sin_port = htons(port);
+   memcpy((char *) &serv_addr.sin_addr.s_addr, (char *) server->h_addr, server->h_length);
 
-   if (connect(fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+   if (connect(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
       perror("couldn't connect to pixelflut");
       return -1;
    }
