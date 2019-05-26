@@ -7,7 +7,7 @@ struct evdi_rect {
 #endif
 
 struct evdi_update {
-	char *fb;
+	unsigned char *fb;
 	struct evdi_rect *rects;
 	int num_rects;
 };

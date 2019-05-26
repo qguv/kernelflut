@@ -1,25 +1,27 @@
 #include <signal.h>	/* sigaction, sig_atomic_t */
+#include <stdbool.h>	/* bool, true, false */
 #include <stdio.h>	/* perror, printf */
 #include <stdlib.h>	/* atoi */
 #include <string.h>	/* memset */
-#include <unistd.h>	/* close */
+#include <unistd.h>	/* close, getopt */
 
 #include "pixelflut.h"	/* pf_connect */
 #include "error.h"	/* ERR_* */
 #include "evdi.h"	/* evdi_setup, evdi_cleanup, evdi_get */
 
-#define ROUNDS 5
-#define STAGGER 2
 #define EPOLL_TIMEOUT 100 /* ms */
 #define EPOLL_NUM_EVENTS 1
-#define PF_CONNS 16
-#define BYTES_PER_PIXEL 4 /* RGB32 */
 
 #define MIN(X, Y) ((Y) < (X) ? (Y) : (X))
 
-volatile sig_atomic_t doomed;
+#define DEFAULT_HOSTNAME	"localhost"
+#define DEFAULT_PORT		1337
+#define DEFAULT_CONNECTIONS	8
 
-int pf_conns[PF_CONNS];
+/* performance test */
+bool pt_active;
+
+volatile sig_atomic_t doomed;
 
 static void interrupt(int _, siginfo_t *__, void *___)
 {
@@ -34,53 +36,61 @@ static int loop(int width)
 {
 	struct evdi_update update;
 
-	int conn = 0;
 	for (;;) {
 		if (doomed)
 			return ERR_INT;
-
-		printf("."); fflush(stdout); // DEBUG
 
 		int err = evdi_get(&update);
 		if (err)
 			return err;
 
 		for (int rect = 0; rect < update.num_rects; rect++) {
-			printf(" %d/%d w=%4d h=%4d\n", rect + 1, update.num_rects, update.rects[rect].x2 - update.rects[rect].x1, update.rects[rect].y2 - update.rects[rect].y1); fflush(stdout); // DEBUG
-			for (int round = 0; round < ROUNDS; round++) {
+			printf("DEBUG %dx%d (%d of %d)\n",
+					update.rects[rect].x2 - update.rects[rect].x1, // DEBUG
+					update.rects[rect].y2 - update.rects[rect].y1, // DEBUG
+					rect + 1, update.num_rects // DEBUG
+			); fflush(stdout); // DEBUG
 
-				int x1 = update.rects[rect].x1;
-				int y1 = update.rects[rect].y1;
-				int x2 = update.rects[rect].x2;
-				int y2 = update.rects[rect].y2;
-
-				for (int y = y1; y < y2; y++) {
-
-					int row_round = (round + y) % ROUNDS;
-					int row_bias = (row_round * STAGGER) % ROUNDS;
-
-					for (int x = x1 + row_bias; x < x2; x += ROUNDS) {
-						int j = (y * width + x) * BYTES_PER_PIXEL;
-
-						char b = update.fb[j];
-						char g = update.fb[j+1];
-						char r = update.fb[j+2];
-
-						if (!pf_set(pf_conns[conn++], x, y, r, g, b))
-							return ERR_PF_SEND;
-
-						conn %= PF_CONNS;
-					}
-				}
-			}
+			err = pf_set_buf(update.fb, width,
+					update.rects[rect].x1, update.rects[rect].x2,
+					update.rects[rect].y1, update.rects[rect].y2);
+			if (err)
+				return err;
 		}
 	}
 
 	return 0;
 }
 
+/* usage prints usage info to stderr. It returns ERR_BADARG for convenience. */
+static int usage(char *progname)
+{
+	fprintf(stderr,
+		"Usage:\n"
+		"  sudo %s [options...] [HOST [PORT]] \n"
+		"\n"
+		"Arguments:\n"
+		"  HOST			pixelflut hostname (default " DEFAULT_HOSTNAME ")\n"
+		"  PORT			pixelflut port (default %d)\n"
+		"\n"
+		"Options:\n"
+		"  -a			use async i/o\n"
+		"  -c CONNECTIONS	size of pixelflut connection pool (default %d)\n"
+		"  -d WxH		scale down to width W and height H\n"
+		"  -o X,Y		move the top-left corner down by Y pixels and right by X pixels\n"
+		"  -s			increase SO_SNDBUF socket buffers by 2x (can pass multiple times)\n"
+		"  -p			do a performance test (time five screen updates)\n"
+		"",
+		progname,
+		DEFAULT_PORT,
+		DEFAULT_CONNECTIONS
+	);
+	return ERR_BADARG;
+}
+
 int main(int argc, char *argv[])
 {
+	/* handle SIGINT gracefully */
 	struct sigaction act;
 	memset(&act, 0, sizeof(act));
 	sigemptyset(&act.sa_mask);
@@ -91,47 +101,121 @@ int main(int argc, char *argv[])
 		return ERR_IRRECOVERABLE;
 	}
 
-	if (argc == 2 && argv[1][0] == '-') {
-		printf("Usage:\n  sudo %s [host [port]]\n", argv[0]);
-		return ERR_USAGE;
-	}
+	/* parse flags and options */
+	bool asyncio = false;
+	int connections = DEFAULT_CONNECTIONS;
+	int sndbuf_shift = 0;
+	pt_active = false;
 
-	char *hostname = "localhost";
-	int port = 1337;
+	/* TODO implement */
+	int constrain_width = 0;
+	int constrain_height = 0;
 
-	if (argc >= 2)
-		hostname = argv[1];
+	/* TODO implement */
+	int origin_x = 0;
+	int origin_y = 0;
 
-	if (argc >= 3) {
-		port = atoi(argv[2]);
-		if (port <= 0) {
-			return ERR_BADPORT;
+	char c;
+	int opt;
+	while ((opt = getopt(argc, argv, "ac:d:o:sph?")) != -1) {
+		switch (opt) {
+		case 'a':
+			asyncio = true;
+			break;
+		case 'c':
+			connections = atoi(optarg);
+			if (connections <= 0)
+				return usage(argv[0]);
+			break;
+		case 'd':
+			constrain_width = atoi(optarg);
+			if (constrain_width <= 0)
+				return usage(argv[0]);
+
+			/* read until we encounter an x */
+			while ((c = *optarg++) && c != 'x');
+			if (!c)
+				return usage(argv[0]);
+
+			constrain_height = atoi(optarg);
+			if (constrain_height <= 0)
+				return usage(argv[0]);
+			break;
+		case 'o':
+			origin_x = atoi(optarg);
+			if (origin_x <= 0)
+				return usage(argv[0]);
+
+			/* read until we encounter a comma */
+			while ((c = *optarg++) && c != ',');
+			if (!c)
+				return usage(argv[0]);
+
+			origin_y = atoi(optarg);
+			if (origin_y <= 0)
+				return usage(argv[0]);
+			break;
+		case 's':
+			sndbuf_shift++;
+			break;
+		case 'p':
+			pt_active = true;
+			break;
+		case 'h':
+		case '?':
+			usage(argv[0]);
+			return 0;
+		default:
+			return usage(argv[0]);
 		}
 	}
 
-	/* connect to pixelflut */
-	for (int i = 0; i < PF_CONNS; i++) {
-		pf_conns[i] = pf_connect(hostname, port);
-		if (pf_conns[i] < 0) {
-			for (int j = 0; j < i; j++)
-				close(pf_conns[j]);
-			return -pf_conns[i];
-		}
+	/* parse positional arguments */
+	char *hostname = DEFAULT_HOSTNAME;
+	if (optind < argc)
+		hostname = argv[optind++];
+
+	int port = DEFAULT_PORT;
+	if (optind < argc) {
+		port = atoi(argv[optind++]);
+		if (port <= 0)
+			return usage(argv[0]);
 	}
 
-	int ret = evdi_setup();
-	if (ret)
-		return ret;
+	/* too many positional arguments */
+	if (optind < argc)
+		return usage(argv[0]);
+
+	int err = pf_connect(connections, hostname, port);
+	if (err)
+		return err;
+
+	if (asyncio) {
+		err = pf_asyncio();
+		if (err)
+			return err;
+	}
+
+	if (sndbuf_shift) {
+		err = pf_increase_sndbuf(sndbuf_shift);
+		if (err)
+			return err;
+	}
+
+	err = evdi_setup();
+	if (err)
+		return err;
 
 	const int width = 800; // DEBUG
-	ret = loop(width);
+	err = loop(width);
+	if (err == EXCEPTION_PT_FINISHED)
+		err = 0;
 
-	for (int i = 0; i < PF_CONNS; i++)
-		close(pf_conns[i]);
+	pf_close();
 
 	evdi_cleanup();
 
-	return ret;
+	return err;
 }
 
 /* vi: set ts=8 sts=8 sw=8 noet: */
