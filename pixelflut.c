@@ -1,10 +1,8 @@
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include <netdb.h>      /* gethostbyname */
+#include <stdio.h>	/* perror, dprintf */
+#include <string.h>     /* memset */
+#include <sys/socket.h> /* socket */
+#include <unistd.h>     /* read */
 
 #include "pixelflut.h"
 
@@ -42,7 +40,7 @@ int pf_connect(char *host, int port)
  * read_until reads from fd until sep is reached, then replaces sep with a null
  * terminator. Returns true if sep was reached.
  */
-bool read_until(int fd, char sep, char *buf, int buf_len)
+static bool read_until(int fd, char sep, char *buf, int buf_len)
 {
    for (int i = 0; i < buf_len; i++, buf++) {
       int n = read(fd, buf, 1);

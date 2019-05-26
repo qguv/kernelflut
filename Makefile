@@ -2,9 +2,9 @@
 # Copyright (c) 2015 - 2016 DisplayLink (UK) Ltd.
 #
 
-OBJ = evdi/library/libevdi.so thinkpad_edid.o pixelflut.o kernelflut.o
-DEPS = pixelflut.h kernelflut.h
-CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Werror -Wpedantic -Wextra -Wno-unused-label -std=gnu99 $(CFLAGS)
+OBJ = evdi/library/libevdi.so thinkpad.o pixelflut.o evdi.o kernelflut.o
+DEPS = evdi.h pixelflut.h kernelflut.h
+CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Wpedantic -Wextra -Werror -std=gnu99 $(CFLAGS)
 
 .PHONY: build
 build: kernelflut
@@ -12,7 +12,7 @@ build: kernelflut
 kernelflut: $(OBJ)
 	$(CC) -o "$@" $^ $(CFLAGS) $(LIBS)
 
-thinkpad_edid.o: thinkpad.edid
+%.o: %.edid
 	ld -r -b binary -o "$@" "$<"
 	objcopy --rename-section .data=.rodata,alloc,load,readonly,data,contents "$@" "$@"
 
@@ -22,10 +22,14 @@ thinkpad_edid.o: thinkpad.edid
 evdi/library/libevdi.so:
 	make -C evdi/library
 
+evdi/module/evdi.ko:
+	make -C evdi/module
+
 .PHONY: clean
 clean:
 	rm -f kernelflut *.o
 	make -C evdi/library clean
+	make -C evdi/module clean
 
 .PHONY: update_evdi
 update_evdi:

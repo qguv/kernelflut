@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>	/* bool */
+
 struct pf_size {
 	int w;
 	int h;
