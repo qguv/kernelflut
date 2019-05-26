@@ -4,7 +4,7 @@
 
 OBJ = evdi/library/libevdi.so thinkpad.o pixelflut.o evdi.o kernelflut.o
 DEPS = evdi.h pixelflut.h kernelflut.h
-CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Wpedantic -Wextra -Werror -std=gnu99 $(CFLAGS)
+CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Wpedantic -Wextra -Werror -std=gnu99 -g $(CFLAGS)
 
 .PHONY: build
 build: kernelflut
