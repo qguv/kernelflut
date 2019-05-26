@@ -1,5 +1,17 @@
 #pragma once
 
+#ifndef EVDI_LIB_H
+struct evdi_rect {
+	int x1, y1, x2, y2;
+};
+#endif
+
+struct evdi_update {
+	char *fb;
+	struct evdi_rect *rects;
+	int num_rects;
+};
+
 /*
  * setup_evdi creates a virtual display and framebuffers. Returns 0 on success
  * and an exit code >0 on failure. If return value is 0, cleanup_evdi MUST be
@@ -15,7 +27,11 @@ int evdi_setup(void);
 void evdi_cleanup(void);
 
 /*
- * evdi_get requests a new framebuffer update from EVDI. evdi_setup() must
- * already have been called.
+ * evdi_get gets the next available frame update from EVDI. Returns 0 on
+ * success and an exit code >0 on failure. Tries to get an immediately ready
+ * framebuffer, otherwise waits until one is ready. evdi_setup() must already
+ * have been called.
  */
-void evdi_get(void);
+int evdi_get(struct evdi_update *update);
+
+/* vi: set ts=8 sts=8 sw=8 noet: */

@@ -1,50 +1,53 @@
-#include <dirent.h>		/* readdir */
-#include <signal.h>		/* sig_atomic_t */
-#include <stdio.h>		/* perror, printf */
-#include <stdlib.h>		/* calloc */
+#include <dirent.h>	/* readdir */
+#include <signal.h>	/* sig_atomic_t */
+#include <stdio.h>	/* perror, printf */
+#include <stdlib.h>	/* calloc */
 #include <sys/epoll.h>	/* epoll */
-#include <unistd.h>		/* close */
+#include <unistd.h>	/* close */
 
-#include "error.h"		/* ERR_* */
+#include "error.h"	/* ERR_* */
 #include "evdi_lib.h"	/* evdi_* */
 
 #include "evdi.h"
 
 #define BYTES_PER_PIXEL 4
 #define RECTS 16
-#define FRAMEBUFFERS 16
+#define FRAMEBUFFERS 1
 
 /* binary data included from *.edid file */
 #define EDID_OBJNAME _binary_thinkpad_edid_start
 #define EDID_SIZE 128
 extern const unsigned char EDID_OBJNAME[];
 
+extern volatile sig_atomic_t doomed;
+
 static evdi_handle ehandle;
 static bool evdi_connected;
 
 static struct evdi_buffer ebufs[FRAMEBUFFERS];
-static bool evdi_buffer_registered[FRAMEBUFFERS];
+static bool ebuf_registered[FRAMEBUFFERS];
+static volatile sig_atomic_t ebuf_requested[FRAMEBUFFERS];
+static volatile sig_atomic_t ebuf_ready[FRAMEBUFFERS];
 
-static struct evdi_rect rects[RECTS][FRAMEBUFFERS];
+static struct evdi_rect internal_rects[RECTS][FRAMEBUFFERS];
+static struct evdi_rect rects[RECTS];
 
 /* econtext holds EVDI event handler callback function pointers */
 static struct evdi_event_context econtext;
 
 static int epoll_fd;
 
-static volatile sig_atomic_t update_ready = 0;
-
 /*
  * update_ready_handler is called when EVDI asynchronous framebuffer updates
  * are ready. If this is getting called, it means we're requesting frames
  * faster than EVDI can givem them to us, which is great!
  */
-static void update_ready_handler(int _, void *__)
+static void update_ready_handler(int fbid, void *_)
 {
 	(void) _;
-	(void) __;
 
-	update_ready = 1;
+	ebuf_ready[fbid] = true;
+	ebuf_requested[fbid] = false;
 }
 
 /*
@@ -90,6 +93,32 @@ static int setup_epoll(void)
 	}
 
 	return 0;
+}
+
+static int evdi_wait(void)
+{
+	struct epoll_event event;
+
+	for (;;) {
+		int w = epoll_wait(epoll_fd, &event, 1 /* events */, 1 /* ms */);
+
+		/* SIGINT */
+		if (doomed)
+			return ERR_INT;
+
+		/* timeout */
+		if (!w)
+			continue;
+
+		/* epoll error */
+		if (w == -1) {
+			perror("epoll");
+			return ERR_EVDI_EPOLL;
+		}
+
+		evdi_handle_events(ehandle, &econtext);
+		return 0;
+	}
 }
 
 int evdi_setup(void)
@@ -138,10 +167,10 @@ int evdi_setup(void)
 		ebufs[fbid].width = width;
 		ebufs[fbid].height = height;
 		ebufs[fbid].stride = width * BYTES_PER_PIXEL; /* RGB32, so four bytes per pixel */
-		ebufs[fbid].rects = rects[fbid];
+		ebufs[fbid].rects = internal_rects[fbid];
 		ebufs[fbid].rect_count = RECTS;
 		evdi_register_buffer(ehandle, ebufs[fbid]);
-		evdi_buffer_registered[fbid] = true;
+		ebuf_registered[fbid] = true;
 	};
 
 	int ret = setup_epoll();
@@ -168,9 +197,9 @@ void evdi_cleanup(void)
 
 		/* unregister framebuffer containers */
 		for (int fbid = 0; fbid < FRAMEBUFFERS; fbid++) {
-			if (evdi_buffer_registered[fbid]) {
+			if (ebuf_registered[fbid]) {
 				evdi_unregister_buffer(ehandle, fbid);
-				evdi_buffer_registered[fbid] = false;
+				ebuf_registered[fbid] = false;
 			}
 
 			/* free framebuffer memory */
@@ -192,13 +221,53 @@ void evdi_cleanup(void)
 	}
 }
 
-/*
- * evdi_get requests a new framebuffer update from EVDI. evdi_setup() must
- * already have been called.
- */
-void evdi_get(void)
+int evdi_get(struct evdi_update *update)
 {
-	static int fbid = 0;
-	evdi_request_update(ehandle, fbid);
-	fbid = (fbid + 1) % FRAMEBUFFERS;
+	static int next_fbid = 0;
+
+	for (;;) {
+
+		/* check if any framebuffers are ready from a callback */
+		// FIXME: this will fail with more than one framebuffer because evdi expects us to read immediately
+		for (int i = 0; i < FRAMEBUFFERS; i++) {
+			int fbid = next_fbid;
+			next_fbid = (next_fbid + 1) % FRAMEBUFFERS;
+
+			if (ebuf_ready[fbid]) {
+				ebuf_ready[fbid] = false;
+				ebuf_requested[fbid] = false;
+
+				evdi_grab_pixels(ehandle, rects, &update->num_rects);
+				update->fb = ebufs[fbid].buffer;
+				update->rects = rects;
+				return 0;
+			}
+		}
+
+		/* request framebuffers that haven't been requested since the last read */
+		for (int i = 0; i < FRAMEBUFFERS; i++) {
+			int fbid = next_fbid;
+			next_fbid = (next_fbid + 1) % FRAMEBUFFERS;
+
+			if (ebuf_requested[fbid])
+				continue;
+
+			bool ready_immediately = evdi_request_update(ehandle, fbid);
+			if (ready_immediately) {
+				evdi_grab_pixels(ehandle, rects, &update->num_rects);
+				update->fb = ebufs[fbid].buffer;
+				update->rects = rects;
+				return 0;
+			}
+
+			ebuf_requested[fbid] = true;
+		}
+
+		/* all requested but none ready; wait for the next callback */
+		int err = evdi_wait();
+		if (err)
+			return err;
+	}
 }
+
+/* vi: set ts=8 sts=8 sw=8 noet: */
