@@ -64,7 +64,6 @@ bool pf_size(int fd, struct pf_size *ret)
       perror("couldn't write size request");
       return false;
    }
-   printf("DEBUG wrote size request!\n");
 
    char buf[32];
    if (!read_until(fd, '\n', buf, sizeof(buf))) {
@@ -77,7 +76,6 @@ bool pf_size(int fd, struct pf_size *ret)
       perror("couldn't read size response");
       return false;
    }
-   printf("DEBUG read size response!\n");
 
    ret->w = w;
    ret->h = h;
