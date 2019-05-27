@@ -2,6 +2,8 @@
 
 #include <stdint.h>	/* uint16_t */
 
+#define PF_NO_BGCOLOR 0x80000000
+
 struct pf_size {
 	int w;
 	int h;
@@ -23,10 +25,11 @@ int pf_size(struct pf_size *ret);
 int pf_set(int x, int y, unsigned char r, unsigned char g, unsigned char b);
 
 /*
- * pf_set_buf tells pixelflut at fd to set a bunch of RGB32 pixels from fb.
- * Returns 0 on success.
+ * pf_set_buf tells pixelflut at fd to set a bunch of RGB32 pixels from fb. If
+ * bgcolor isn't PF_NO_BGCOLOR, then occasionally repaint every pixel except
+ * this color. Returns 0 on success.
  */
-int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2);
+int pf_set_buf(const uint32_t * const fb, const int width, const int x1, const int x2, const int y1, const int y2, const uint32_t bgcolor);
 
 /*
  * pf_close closes the connection pool opened by pf_connect and deallocates its

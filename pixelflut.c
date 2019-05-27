@@ -14,7 +14,7 @@
 
 #define ROUNDS 5
 #define STAGGER 2
-#define BYTES_PER_PIXEL 4 /* RGB32 */ // DEBUG
+#define REBLIT_FREQUENCY 23	/* should be prime and far from 2^n */
 
 /* performance test */
 #define PT_TRIALS 5
@@ -175,9 +175,12 @@ int pf_set(int x, int y, unsigned char r, unsigned char g, unsigned char b)
 	return 0;
 }
 
-int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2)
+int pf_set_buf(const uint32_t * const fb, const int width, const int x1, const int x2, const int y1, const int y2, const uint32_t bgcolor)
 {
-	static uint32_t *last_buf = NULL;
+	static const uint32_t *last_buf = NULL;
+	static int skip_reblit = 0;
+
+	const bool ignore_bgcolor = (bgcolor == PF_NO_BGCOLOR);
 
 	if (pt_active)
 		clock_gettime(CLOCK_MONOTONIC_RAW, &pt_running);
@@ -192,6 +195,7 @@ int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2)
 			int xi = x1 + row_bias;
 
 			for (int x = xi, i = row_start_i + xi; x < x2; x += ROUNDS, i += ROUNDS) {
+				skip_reblit = (skip_reblit + 1) % REBLIT_FREQUENCY;
 
 				/* get next connection from pool */
 				int fd = conns[active_conn_i];
@@ -199,8 +203,8 @@ int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2)
 
 				uint32_t color = fb[i];
 
-				/* skip redundant pixels */
-				if (last_buf && last_buf[i] == color)
+				/* skip redundant pixels. sometimes reblit anyway if skip_reblit reaches zero */
+				if (last_buf && last_buf[i] == color && (ignore_bgcolor || (color & 0x00ffffff) == bgcolor || skip_reblit))
 					continue;
 
 				/* extract colors */

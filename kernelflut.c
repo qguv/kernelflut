@@ -1,7 +1,7 @@
 #include <signal.h>	/* sigaction, sig_atomic_t */
 #include <stdbool.h>	/* bool, true, false */
 #include <stdio.h>	/* perror, printf */
-#include <stdlib.h>	/* atoi */
+#include <stdlib.h>	/* atoi, strtoul */
 #include <string.h>	/* memset */
 #include <unistd.h>	/* close, getopt */
 
@@ -32,7 +32,7 @@ static void interrupt(int _, siginfo_t *__, void *___)
 	doomed = 1;
 }
 
-static int loop(int width)
+static int loop(int width, uint32_t bgcolor)
 {
 	struct evdi_update update;
 
@@ -56,7 +56,8 @@ static int loop(int width)
 
 			err = pf_set_buf((uint32_t *) update.fb, width,
 					update.rects[rect].x1, update.rects[rect].x2,
-					update.rects[rect].y1, update.rects[rect].y2);
+					update.rects[rect].y1, update.rects[rect].y2,
+					bgcolor);
 			if (err)
 				return err;
 		}
@@ -78,6 +79,7 @@ static int usage(char *progname)
 		"\n"
 		"Options:\n"
 		"  -a			use async i/o\n"
+		"  -b RRGGBB		occasionally blit every pixel except this one\n"
 		"  -c CONNECTIONS	size of pixelflut connection pool (default %d)\n"
 		"  -d WxH		scale down to width W and height H\n"
 		"  -o X,Y		move the top-left corner down by Y pixels and right by X pixels\n"
@@ -118,12 +120,19 @@ int main(int argc, char *argv[])
 	int origin_x = 0;
 	int origin_y = 0;
 
+	uint32_t bgcolor = PF_NO_BGCOLOR;
+
 	char c;
 	int opt;
-	while ((opt = getopt(argc, argv, "ac:d:o:sph?")) != -1) {
+	while ((opt = getopt(argc, argv, "ab:c:d:o:sph?")) != -1) {
 		switch (opt) {
 		case 'a':
 			asyncio = true;
+			break;
+		case 'b':
+			bgcolor = strtoul(optarg, NULL, 16);
+			if (bgcolor > 0x00ffffff)
+				return usage(argv[0]);
 			break;
 		case 'c':
 			connections = atoi(optarg);
@@ -210,7 +219,7 @@ int main(int argc, char *argv[])
 		return err;
 
 	const int width = 800; // DEBUG
-	err = loop(width);
+	err = loop(width, bgcolor);
 	if (err == EXCEPTION_PT_FINISHED || err == EXCEPTION_INT)
 		err = 0;
 
