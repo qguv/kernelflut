@@ -1,10 +1,9 @@
 #pragma once
 
 /* general errors */
-#define ERR_INT		1
-#define ERR_BADARG	2
-#define ERR_ALLOC	3
-#define ERR_IRRECOVERABLE 4
+#define ERR_BADARG	1
+#define ERR_ALLOC	2
+#define ERR_IRRECOVERABLE 3
 
 /* evdi errors */
 #define ERR_EVDI_ADD	10
@@ -23,5 +22,6 @@
 
 /* non-errors (should never exit with these) */
 #define EXCEPTION_PT_FINISHED	30
+#define EXCEPTION_INT		31
 
 /* vi: set ts=8 sts=8 sw=8 noet: */

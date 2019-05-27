@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>	/* uint16_t */
+
 struct pf_size {
 	int w;
 	int h;
@@ -24,7 +26,7 @@ int pf_set(int x, int y, unsigned char r, unsigned char g, unsigned char b);
  * pf_set_buf tells pixelflut at fd to set a bunch of RGB32 pixels from fb.
  * Returns 0 on success.
  */
-int pf_set_buf(unsigned char *fb, int width, int x1, int x2, int y1, int y2);
+int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2);
 
 /*
  * pf_close closes the connection pool opened by pf_connect and deallocates its

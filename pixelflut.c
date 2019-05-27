@@ -5,8 +5,8 @@
 #include <stdlib.h>	/* calloc */
 #include <string.h>	/* memset */
 #include <sys/socket.h> /* socket, getsockopt, setsockopt */
-#include <unistd.h>	/* read */
 #include <time.h>	/* clock_gettime */
+#include <unistd.h>	/* read */
 
 #include "error.h"	/* ERR_* */
 
@@ -175,27 +175,38 @@ int pf_set(int x, int y, unsigned char r, unsigned char g, unsigned char b)
 	return 0;
 }
 
-int pf_set_buf(unsigned char *fb, int width, int x1, int x2, int y1, int y2)
+int pf_set_buf(uint32_t *fb, int width, int x1, int x2, int y1, int y2)
 {
+	static uint32_t *last_buf = NULL;
+
 	if (pt_active)
 		clock_gettime(CLOCK_MONOTONIC_RAW, &pt_running);
 
 	for (int round = 0; round < ROUNDS; round++) {
-		for (int y = y1; y < y2; y++) {
 
+		for (int y = y1, row_start_i = y1 * width; y < y2; y++, row_start_i += width) {
+
+			/* stagger updates in rounds so we blit pixels ASAP */
 			int row_round = (round + y) % ROUNDS;
 			int row_bias = (row_round * STAGGER) % ROUNDS;
+			int xi = x1 + row_bias;
 
-			for (int x = x1 + row_bias; x < x2; x += ROUNDS) {
+			for (int x = xi, i = row_start_i + xi; x < x2; x += ROUNDS, i += ROUNDS) {
 
 				/* get next connection from pool */
 				int fd = conns[active_conn_i];
 				active_conn_i = (active_conn_i + 1) % num_conns;
 
+				uint32_t color = fb[i];
+
+				/* skip redundant pixels */
+				if (last_buf && last_buf[i] == color)
+					continue;
+
 				/* extract colors */
-				unsigned char b = fb[(y * width + x) * BYTES_PER_PIXEL + 0];
-				unsigned char g = fb[(y * width + x) * BYTES_PER_PIXEL + 1];
-				unsigned char r = fb[(y * width + x) * BYTES_PER_PIXEL + 2];
+				unsigned char b = (color >>  0) & 0xff;
+				unsigned char g = (color >>  8) & 0xff;
+				unsigned char r = (color >> 16) & 0xff;
 
 				/* assemble into string and print */
 				dprintf(fd, "PX %d %d %02x%02x%02x\n", x, y, r, g, b);
@@ -226,6 +237,7 @@ int pf_set_buf(unsigned char *fb, int width, int x1, int x2, int y1, int y2)
 		}
 	}
 
+	last_buf = fb;
 	return 0;
 }
 

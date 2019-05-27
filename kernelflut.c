@@ -36,22 +36,25 @@ static int loop(int width)
 {
 	struct evdi_update update;
 
+	int DEBUG_alternate = 0;
 	for (;;) {
+		DEBUG_alternate ^= 1;
 		if (doomed)
-			return ERR_INT;
+			return EXCEPTION_INT;
 
 		int err = evdi_get(&update);
 		if (err)
 			return err;
 
 		for (int rect = 0; rect < update.num_rects; rect++) {
+			printf(DEBUG_alternate ? ". " : " .");
 			printf("DEBUG %dx%d (%d of %d)\n",
 					update.rects[rect].x2 - update.rects[rect].x1, // DEBUG
 					update.rects[rect].y2 - update.rects[rect].y1, // DEBUG
 					rect + 1, update.num_rects // DEBUG
 			); fflush(stdout); // DEBUG
 
-			err = pf_set_buf(update.fb, width,
+			err = pf_set_buf((uint32_t *) update.fb, width,
 					update.rects[rect].x1, update.rects[rect].x2,
 					update.rects[rect].y1, update.rects[rect].y2);
 			if (err)
@@ -208,7 +211,7 @@ int main(int argc, char *argv[])
 
 	const int width = 800; // DEBUG
 	err = loop(width);
-	if (err == EXCEPTION_PT_FINISHED)
+	if (err == EXCEPTION_PT_FINISHED || err == EXCEPTION_INT)
 		err = 0;
 
 	pf_close();

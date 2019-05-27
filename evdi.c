@@ -12,7 +12,7 @@
 
 #define BYTES_PER_PIXEL 4
 #define RECTS 16
-#define FRAMEBUFFERS 1
+#define FRAMEBUFFERS 2
 
 /* binary data included from *.edid file */
 #define EDID_OBJNAME _binary_thinkpad_edid_start
@@ -101,7 +101,7 @@ static int evdi_wait(void)
 
 		/* SIGINT */
 		if (doomed)
-			return ERR_INT;
+			return EXCEPTION_INT;
 
 		/* timeout */
 		if (!w)
@@ -223,14 +223,15 @@ void evdi_cleanup(void)
 int evdi_get(struct evdi_update *update)
 {
 	/* TODO: cycle safely through framebuffers using shared memory */
-	int fbid = 0;
+	static int fbid = 0;
+	fbid ^= 1;
 
 	bool ready_immediately = evdi_request_update(ehandle, fbid);
 	if (!ready_immediately) {
 		while (ebuf_ready_fbid != fbid) {
 			int err = evdi_wait();
 			if (doomed)
-				return ERR_INT;
+				return EXCEPTION_INT;
 			if (err)
 				return err;
 		}

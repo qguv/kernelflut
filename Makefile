@@ -25,6 +25,14 @@ evdi/library/libevdi.so:
 evdi/module/evdi.ko:
 	make -C evdi/module
 
+.PHONY: run
+run: kernelflut
+	sudo "./$^"
+
+.PHONY: insmod
+insmod: evdi/module/evdi.ko
+	sudo insmod "$^" enable_cursor_blending=0
+
 .PHONY: clean
 clean:
 	rm -f kernelflut *.o
