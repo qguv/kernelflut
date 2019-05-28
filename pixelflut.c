@@ -65,22 +65,27 @@ int pf_asyncio(void)
  * Returns the fd if successful, otherwise returns a negative error; please
  * multiply this error by -1 before using it.
  */
-static int pf_connect1(struct hostent *server, int port)
+static int pf_connect1(struct addrinfo *server)
 {
-	int fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (fd < 0) {
-		perror("couldn't open socket to connect to pixelflut");
-		return -ERR_PF_SOCKET;
+	struct addrinfo* p;
+	int fd;
+	for(p = server; p != NULL; p = p->ai_next) {
+		// printf("{ai_family = %d, ai_socktype = %d, ai_protocol = %d}\n", p->ai_family, p->ai_socktype, p->ai_protocol);
+		if((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+			// perror("couldn't open socket to connect to pixelflut");
+			continue;
+		}
+		if (connect(fd, p->ai_addr, p->ai_addrlen) < 0) {
+			close(fd);
+			// perror("couldn't connect to pixelflut");
+			continue;
+		}
+		// connected succesfully
+		break;
 	}
-
-	struct sockaddr_in serv_addr;
-	memset(&serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(port);
-	memcpy((char *) &serv_addr.sin_addr.s_addr, (char *) server->h_addr, server->h_length);
-
-	if (connect(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-		perror("couldn't connect to pixelflut");
+	// didn't break loop, so didn't manage to make connection
+	if(p == NULL) {
+		perror("unable to open any socket");
 		return -ERR_PF_CONNECT;
 	}
 
@@ -113,16 +118,28 @@ int pf_connect(int pool_size, char *host, int port)
 	num_conns = pool_size;
 	conns = calloc(num_conns, sizeof(*conns));
 
-	/* resolve host TODO: ipv6 */
-	struct hostent *server = gethostbyname(host);
-	if (server == NULL) {
-		herror("pixelflut hostname not found");
+	/* resolve host */
+	struct addrinfo *address;
+	struct addrinfo hints = {
+		.ai_family = AF_UNSPEC,
+		.ai_socktype = SOCK_STREAM,
+	};
+	char service[15];
+	snprintf(service, 15, "%d", port);
+	int error = getaddrinfo(host, service, &hints, &address);
+	if(error != 0) {
+		if(error == EAI_SYSTEM) {
+			perror("getaddrinfo");
+		}
+		else {
+			herror("pixelflut: getaddrinfo hostname not found");
+		}
 		return ERR_PF_GETHOST;
 	}
 
 	/* connect to pixelflut */
 	for (int i = 0; i < num_conns; i++) {
-		int fp = pf_connect1(server, port);
+		int fp = pf_connect1(address);
 		if (fp < 0) {
 			pf_close();
 			return -fp;
