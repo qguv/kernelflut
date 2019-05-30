@@ -67,29 +67,22 @@ int pf_asyncio(void)
  */
 static int pf_connect1(struct addrinfo *server)
 {
-	struct addrinfo* p;
 	int fd;
-	for(p = server; p != NULL; p = p->ai_next) {
-		// printf("{ai_family = %d, ai_socktype = %d, ai_protocol = %d}\n", p->ai_family, p->ai_socktype, p->ai_protocol);
-		if((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-			// perror("couldn't open socket to connect to pixelflut");
+	for (struct addrinfo *p = server; p; p = p->ai_next) {
+
+		if ((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
 			continue;
-		}
+
 		if (connect(fd, p->ai_addr, p->ai_addrlen) < 0) {
 			close(fd);
-			// perror("couldn't connect to pixelflut");
 			continue;
 		}
-		// connected succesfully
-		break;
-	}
-	// didn't break loop, so didn't manage to make connection
-	if(p == NULL) {
-		perror("unable to open any socket");
-		return -ERR_PF_CONNECT;
+
+		return fd;
 	}
 
-	return fd;
+	perror("unable to open any socket");
+	return -ERR_PF_CONNECT;
 }
 
 /*
