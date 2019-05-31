@@ -29,12 +29,9 @@ You need to build and install the evdi kernel module, then build and install the
 evdi userspace library, then build and install kernelflut itself. This looks
 something like:
 
-1. `make evdi/module/evdi.ko`
-2. `sudo insmod evdi/module/evdi.ko`
-3. `make`
-4. `sudo install -t /usr/local/lib evdi/library/libevdi.so.0`
-5. put /usr/local/lib on LD_LIBRARY_PATH if it isn't already there
-4. `sudo install -t /usr/local/bin kernelflut`
+1. `make insmod` to build and install the EVDI kernel module. This must be done on each boot.
+2. `make evdi_install` to build and install the EVDI userspace library. This only needs to be done once.
+3. `make run` to build and run kernelflut.
 
 ## running
 

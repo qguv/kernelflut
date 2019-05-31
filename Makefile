@@ -5,6 +5,7 @@
 OBJ = evdi/library/libevdi.so thinkpad.o pixelflut.o evdi.o kernelflut.o
 DEPS = evdi.h pixelflut.h kernelflut.h
 CFLAGS := -I. -Ievdi/library -Levdi/library -levdi -Wall -Wpedantic -Wextra -Werror -std=gnu99 -g $(CFLAGS)
+LIB_DIR ?= /usr/local/lib
 
 .PHONY: build
 build: kernelflut
@@ -27,11 +28,17 @@ evdi/module/evdi.ko:
 
 .PHONY: run
 run: kernelflut
-	sudo "./$^"
+	sudo LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib" "./$^"
 
 .PHONY: insmod
 insmod: evdi/module/evdi.ko
-	sudo insmod "$^" enable_cursor_blending=0
+	sudo insmod "$^" enable_cursor_blending=0 || true
+
+${LIB_DIR}/libevdi.so.0: evdi/library/libevdi.so
+	sudo cp "$^" "$@"
+
+.PHONY: evdi_install
+evdi_install: ${LIB_DIR}/libevdi.so.0
 
 .PHONY: clean
 clean:
