@@ -41,4 +41,4 @@ clean:
 
 .PHONY: update_evdi
 update_evdi:
-	git subtree pull --prefix evdi https://github.com/DisplayLink/evdi master --squash
+	git subtree pull --prefix evdi https://github.com/DisplayLink/evdi devel --squash
