@@ -18,6 +18,10 @@
 #include <linux/mutex.h>
 #include <linux/compiler.h>
 
+#if KERNEL_VERSION(5, 1, 0) <= LINUX_VERSION_CODE
+#include <drm/drm_probe_helper.h>
+#endif
+
 #if KERNEL_VERSION(4, 12, 0) > LINUX_VERSION_CODE
 static inline void drm_framebuffer_put(struct drm_framebuffer *fb)
 {
@@ -122,8 +126,7 @@ static void collapse_dirty_rects(struct drm_clip_rect *rects, int *count)
 {
 	int i;
 
-	EVDI_CHECKPT();
-	EVDI_WARN("Not enough space for clip rects! Rects will be collapsed");
+	EVDI_VERBOSE("Not enough space for rects. They will be collapsed");
 
 	for (i = 1; i < *count; ++i)
 		expand_rect(&rects[0], &rects[i]);
