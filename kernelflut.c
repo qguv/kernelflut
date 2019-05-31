@@ -47,12 +47,14 @@ static int loop(int width, uint32_t bgcolor)
 			return err;
 
 		for (int rect = 0; rect < update.num_rects; rect++) {
+#ifdef DEBUG
 			printf(DEBUG_alternate ? ". " : " .");
 			printf("DEBUG %dx%d (%d of %d)\n",
 					update.rects[rect].x2 - update.rects[rect].x1, // DEBUG
 					update.rects[rect].y2 - update.rects[rect].y1, // DEBUG
 					rect + 1, update.num_rects // DEBUG
 			); fflush(stdout); // DEBUG
+#endif
 
 			err = pf_set_buf((uint32_t *) update.fb, width,
 					update.rects[rect].x1, update.rects[rect].x2,
