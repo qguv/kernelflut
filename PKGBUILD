@@ -1,4 +1,4 @@
-# Maintainer: Your Name <youremail@domain.com>
+# Maintainer: Quint Guvernator <quint@guvernator.net>
 _pkgname=kernelflut
 pkgname=kernelflut-git
 pkgver=0.1.0
